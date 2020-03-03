@@ -1,14 +1,22 @@
 import pandas as pd 
 import datetime
 from google.cloud import bigquery
+from datetime import timedelta
 import os
 
 
 client = bigquery.Client()
-filename = './master_table.csv'
+#master_table
+master_table_path = './master_table.csv'
 dataset_id = 'covid_19'
-table_id = 'master_table'
-now = datetime.datetime.now()
+table_id_master = 'master_table'
+
+#today_table
+today_table_path = './today_table.csv'
+table_id_today= 'today_table'
+
+yesterday = (datetime.date.today() - timedelta(days=1)).strftime("%-m/%-d/%y")
+today = datetime.date.today().strftime("%-m/%-d/%y")
 
 def get_data():
     try: 
@@ -25,6 +33,13 @@ def get_data():
         print('Cannot get the data. Please check the url')
         return -1
 
+def get_today_data(master): 
+    global yesterday, today
+    # master = pd.read_csv('master_table.csv')
+    if len(master['date'] == yesterday)>0:
+        master[master['date'] == yesterday].to_csv('today_table.csv')
+    else:
+        master[master['date'] == today].to_csv('today_table.csv')
 
 def melted_data(df, date_range):
     data = df.copy()
@@ -34,7 +49,8 @@ def melted_data(df, date_range):
     df_melted = df_melted.rename(columns={'variable':'date', 'value':'people'})
     return df_melted
 
-def load_to_bigquery():
+
+def load_to_bigquery(filename, dataset_id, table_id):
     dataset_ref = client.dataset(dataset_id)
     table_ref = dataset_ref.table(table_id)
     job_config = bigquery.LoadJobConfig()
@@ -50,7 +66,11 @@ def load_to_bigquery():
 
     print("Loaded {} rows into {}:{}.".format(job.output_rows, dataset_id, table_id))
 
+
+
 def create_final_table():
+    global master_table_path, today_table_path
+
     death, confirm, recover = get_data()
     date_range = confirm.columns[4:]
     
@@ -66,11 +86,16 @@ def create_final_table():
     master_table.rename(columns={'index':'loc_index'}, inplace=True)
     ultimate_table = df_loc.merge(master_table, left_on='loc_index', right_on='loc_index')
     ultimate_table.to_csv('master_table.csv', index=False)
-    print('Finish Create CSV')
+    print('Finish Create master_table')
+ 
+    get_today_data(ultimate_table)
+    print('Finish Create today table')
 
-    load_to_bigquery()
+    load_to_bigquery(master_table_path, dataset_id, table_id_master)
+    load_to_bigquery(today_table_path, dataset_id, table_id_today)
 
-    return 'Task complete'
-    
+
+
+
 if __name__ == "__main__":
     create_final_table()
